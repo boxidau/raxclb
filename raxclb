@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+
+# vim: tabstop=4 shiftwidth=4 softtabstop=4
+
+import os
+import sys
+import time
+import pyrax
+import netifaces
+import argparse
+
+def add(snet_ip, lb):
+
+    for node in lb.nodes:
+        if node.address == snet_ip:
+            print 'Node already in LB'
+            sys.exit(0)
+
+    # No exit above means the node isn't in the LB
+    new_node = clb.Node(address=snet_ip, port=80, condition="ENABLED")
+
+    lb.add_nodes([new_node])
+    pyrax.utils.wait_until(lb, "status", "ACTIVE", interval=1, attempts=30, verbose=True)
+
+    print 'Node added [OK]'
+    sys.exit(0)
+
+def remove(snet_ip, lb):
+    for node in lb.nodes:
+        if node.address == snet_ip:
+            print 'Draining Connections for 10 seconds'
+            node.condition = 'DRAINING'
+            node.update()
+    
+            pyrax.utils.wait_until(lb, "status", "ACTIVE", interval=1, attempts=30, verbose=True)
+            time.sleep(10)
+            
+            node.delete()
+            pyrax.utils.wait_until(lb, "status", "ACTIVE", interval=1, attempts=30, verbose=True)
+            print 'Node removed [OK]'            
+
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('action', choices=['start', 'stop'])
+
+    args = parser.parse_args()
+    
+    snet_ip = netifaces.ifaddresses('eth1')[netifaces.AF_INET][0]['addr']
+
+    pyrax.set_setting("identity_type", "rackspace")
+    pyrax.set_credential_file(os.path.expanduser('~/.cloud_credentials'))
+
+    clb = pyrax.cloud_loadbalancers
+    lb = clb.get(37903);
+
+    if args.action == 'start':
+        add(snet_ip, lb)
+    else:
+        remove(snet_ip, lb)
